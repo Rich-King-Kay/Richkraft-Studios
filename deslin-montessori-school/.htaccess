@@ -1,0 +1,24 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /Richkraft-Studios/deslin-montessori-school/
+    
+    # Protect sensitive files
+    <FilesMatch "\.(env|sql|log|md|json)$">
+        Deny from all
+    </FilesMatch>
+    
+    # Remove .php extension
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME}.php -f
+    RewriteRule ^([^/]+)/?$ $1.php [QSA]
+    
+    # Redirect to login if not authenticated
+    RewriteCond %{REQUEST_URI} !^/Richkraft-Studios/deslin-montessori-school/public/login\.php$ [NC]
+    RewriteCond %{REQUEST_URI} !^/Richkraft-Studios/deslin-montessori-school/public/assets/ [NC]
+    RewriteCond %{HTTPS} off
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+else
+    php_value upload_max_filesize 5M
+    php_value post_max_size 5M
+else
+</IfModule>
