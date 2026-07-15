@@ -7,6 +7,35 @@ require_once __DIR__ . '/../config/config.php';
 require_once __DIR__ . '/../config/database.php';
 
 /**
+ * Get the shared database connection
+ */
+function dbConnection() {
+    return Database::getInstance()->getConnection();
+}
+
+/**
+ * Count rows in a table, optionally filtered by a raw WHERE clause
+ */
+function dbCount($table, $where = '1') {
+    $result = dbConnection()->query("SELECT COUNT(*) as total FROM $table WHERE $where");
+    return $result->fetch_assoc()['total'];
+}
+
+/**
+ * Run a query and return all rows as an associative array
+ */
+function dbFetchAll($query) {
+    return dbConnection()->query($query)->fetch_all(MYSQLI_ASSOC);
+}
+
+/**
+ * Run a query and return the first row as an associative array
+ */
+function dbFetchOne($query) {
+    return dbConnection()->query($query)->fetch_assoc();
+}
+
+/**
  * Format date for display
  */
 function formatDate($date) {
@@ -24,47 +53,36 @@ function formatDateTime($datetime) {
  * Get total students count
  */
 function getTotalStudents() {
-    $db = Database::getInstance()->getConnection();
-    $result = $db->query("SELECT COUNT(*) as total FROM students WHERE student_status = 'Active'");
-    $row = $result->fetch_assoc();
-    return $row['total'];
+    return dbCount('students', "student_status = 'Active'");
 }
 
 /**
  * Get total teachers count
  */
 function getTotalTeachers() {
-    $db = Database::getInstance()->getConnection();
-    $result = $db->query("SELECT COUNT(*) as total FROM teachers WHERE teacher_status = 'Active'");
-    $row = $result->fetch_assoc();
-    return $row['total'];
+    return dbCount('teachers', "teacher_status = 'Active'");
 }
 
 /**
  * Get total classes count
  */
 function getTotalClasses() {
-    $db = Database::getInstance()->getConnection();
-    $result = $db->query("SELECT COUNT(*) as total FROM classes WHERE is_active = 1");
-    $row = $result->fetch_assoc();
-    return $row['total'];
+    return dbCount('classes', 'is_active = 1');
 }
 
 /**
  * Get attendance percentage for today
  */
 function getTodayAttendancePercentage() {
-    $db = Database::getInstance()->getConnection();
     $today = date('Y-m-d');
-    $result = $db->query(
+    $row = dbFetchOne(
         "SELECT 
             COUNT(*) as total_marked,
             SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) as present
          FROM attendance 
          WHERE attendance_date = '$today'"
     );
-    $row = $result->fetch_assoc();
-    
+
     if ($row['total_marked'] == 0) return 0;
     return round(($row['present'] / $row['total_marked']) * 100, 2);
 }
@@ -73,27 +91,21 @@ function getTodayAttendancePercentage() {
  * Get all classes
  */
 function getAllClasses() {
-    $db = Database::getInstance()->getConnection();
-    $result = $db->query("SELECT * FROM classes WHERE is_active = 1 ORDER BY class_level");
-    return $result->fetch_all(MYSQLI_ASSOC);
+    return dbFetchAll("SELECT * FROM classes WHERE is_active = 1 ORDER BY class_level");
 }
 
 /**
  * Get all subjects
  */
 function getAllSubjects() {
-    $db = Database::getInstance()->getConnection();
-    $result = $db->query("SELECT * FROM subjects WHERE is_active = 1 ORDER BY subject_name");
-    return $result->fetch_all(MYSQLI_ASSOC);
+    return dbFetchAll("SELECT * FROM subjects WHERE is_active = 1 ORDER BY subject_name");
 }
 
 /**
  * Get school settings
  */
 function getSchoolSettings() {
-    $db = Database::getInstance()->getConnection();
-    $result = $db->query("SELECT * FROM school_settings LIMIT 1");
-    return $result->fetch_assoc();
+    return dbFetchOne("SELECT * FROM school_settings LIMIT 1");
 }
 
 /**

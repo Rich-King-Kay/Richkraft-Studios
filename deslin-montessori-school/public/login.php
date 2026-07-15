@@ -52,12 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute();
 
             // Audit log
-            $auditStmt = $db->prepare(
-                "INSERT INTO audit_log (user_id, action, ip_address, user_agent) 
-                 VALUES (?, 'LOGIN', ?, ?)"
-            );
-            $auditStmt->bind_param('iss', $loginResult['user_id'], $ip, $userAgent);
-            $auditStmt->execute();
+            SecurityHelper::logAudit($db, $loginResult['user_id'], 'LOGIN');
 
             SecurityHelper::redirect(APP_URL . '/public/index.php');
             exit();

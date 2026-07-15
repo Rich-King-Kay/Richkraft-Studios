@@ -4,15 +4,11 @@
  * Handles teacher data operations
  */
 
-require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/BaseModel.php';
 
-class Teacher {
-    private $db;
-    private $table = 'teachers';
-
-    public function __construct() {
-        $this->db = Database::getInstance()->getConnection();
-    }
+class Teacher extends BaseModel {
+    protected $table = 'teachers';
+    protected $primaryKey = 'teacher_id';
 
     /**
      * Create a new teacher
@@ -45,11 +41,7 @@ class Teacher {
             $data['bank_name']
         );
 
-        if ($stmt->execute()) {
-            return ['success' => true, 'teacher_id' => $this->db->insert_id, 'message' => 'Teacher added successfully'];
-        } else {
-            return ['success' => false, 'message' => $stmt->error];
-        }
+        return $this->insertResult($stmt, 'teacher_id', 'Teacher added successfully');
     }
 
     /**
@@ -144,10 +136,6 @@ class Teacher {
      * Update teacher
      */
     public function update($teacherId, $data) {
-        $updateFields = [];
-        $types = '';
-        $values = [];
-
         $allowedFields = [
             'phone_number', 'residential_address', 'city', 'state', 'postal_code',
             'assigned_class_id', 'qualification', 'specialization',
@@ -155,35 +143,14 @@ class Teacher {
             'bank_name', 'teacher_status'
         ];
 
-        foreach ($allowedFields as $field) {
-            if (isset($data[$field])) {
-                $updateFields[] = "$field = ?";
-                $types .= (in_array($field, ['assigned_class_id']) ? 'i' : 's');
-                $values[] = $data[$field];
-            }
-        }
-
-        if (empty($updateFields)) {
-            return ['success' => false, 'message' => 'No fields to update'];
-        }
-
-        $types .= 'i';
-        $values[] = $teacherId;
-
-        $query = "UPDATE {$this->table} SET " . implode(', ', $updateFields) . " WHERE teacher_id = ?";
-        $stmt = $this->db->prepare($query);
-
-        if (!$stmt) {
-            return ['success' => false, 'message' => 'Query failed'];
-        }
-
-        $stmt->bind_param($types, ...$values);
-
-        if ($stmt->execute()) {
-            return ['success' => true, 'message' => 'Teacher updated successfully'];
-        } else {
-            return ['success' => false, 'message' => $stmt->error];
-        }
+        return $this->updateRecord(
+            $teacherId,
+            $data,
+            $allowedFields,
+            ['assigned_class_id' => 'i'],
+            [],
+            'Teacher updated successfully'
+        );
     }
 
     /**
@@ -195,35 +162,21 @@ class Teacher {
         );
         $stmt->bind_param('i', $teacherId);
 
-        return $stmt->execute() ? 
-            ['success' => true, 'message' => 'Teacher deleted successfully'] : 
-            ['success' => false, 'message' => $stmt->error];
+        return $this->resultFromExecute($stmt, 'Teacher deleted successfully');
     }
 
     /**
      * Get total teachers count
      */
     public function getTotalCount() {
-        $result = $this->db->query("SELECT COUNT(*) as total FROM {$this->table} WHERE teacher_status = 'Active'");
-        $row = $result->fetch_assoc();
-        return $row['total'];
+        return $this->countRecords("teacher_status = 'Active'");
     }
 
     /**
      * Check if employment number exists
      */
     public function empNoExists($empNo, $excludeTeacherId = null) {
-        $query = "SELECT teacher_id FROM {$this->table} WHERE teacher_emp_no = ?";
-        if ($excludeTeacherId) {
-            $query .= " AND teacher_id != ?";
-            $stmt = $this->db->prepare($query);
-            $stmt->bind_param('si', $empNo, $excludeTeacherId);
-        } else {
-            $stmt = $this->db->prepare($query);
-            $stmt->bind_param('s', $empNo);
-        }
-        $stmt->execute();
-        return $stmt->get_result()->num_rows > 0;
+        return $this->existsWhere('teacher_emp_no', $empNo, $excludeTeacherId);
     }
 }
 

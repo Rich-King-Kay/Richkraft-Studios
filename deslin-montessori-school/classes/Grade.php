@@ -4,15 +4,11 @@
  * Handles grade and result data operations
  */
 
-require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/BaseModel.php';
 
-class Grade {
-    private $db;
-    private $table = 'grades';
-
-    public function __construct() {
-        $this->db = Database::getInstance()->getConnection();
-    }
+class Grade extends BaseModel {
+    protected $table = 'grades';
+    protected $primaryKey = 'grade_id';
 
     /**
      * Create a grade record
@@ -53,11 +49,7 @@ class Grade {
             $data['teacher_id']
         );
 
-        if ($stmt->execute()) {
-            return ['success' => true, 'grade_id' => $this->db->insert_id, 'message' => 'Grade recorded successfully'];
-        } else {
-            return ['success' => false, 'message' => $stmt->error];
-        }
+        return $this->insertResult($stmt, 'grade_id', 'Grade recorded successfully');
     }
 
     /**
@@ -122,35 +114,14 @@ class Grade {
      * Update grade
      */
     public function update($gradeId, $data) {
-        $updateFields = [];
-        $types = '';
-        $values = [];
-
-        if (isset($data['test_score'])) {
-            $updateFields[] = 'test_score = ?';
-            $types .= 'd';
-            $values[] = $data['test_score'];
-        }
-        if (isset($data['exam_score'])) {
-            $updateFields[] = 'exam_score = ?';
-            $types .= 'd';
-            $values[] = $data['exam_score'];
-        }
-        if (isset($data['assignment_score'])) {
-            $updateFields[] = 'assignment_score = ?';
-            $types .= 'd';
-            $values[] = $data['assignment_score'];
-        }
-        if (isset($data['class_work_score'])) {
-            $updateFields[] = 'class_work_score = ?';
-            $types .= 'd';
-            $values[] = $data['class_work_score'];
-        }
-        if (isset($data['remarks'])) {
-            $updateFields[] = 'remarks = ?';
-            $types .= 's';
-            $values[] = $data['remarks'];
-        }
+        $allowedFields = ['test_score', 'exam_score', 'assignment_score', 'class_work_score', 'remarks'];
+        $fieldTypes = [
+            'test_score' => 'd',
+            'exam_score' => 'd',
+            'assignment_score' => 'd',
+            'class_work_score' => 'd',
+            'remarks' => 's',
+        ];
 
         // Recalculate total score and grade
         $grade = $this->getById($gradeId);
@@ -158,49 +129,29 @@ class Grade {
                       ($data['exam_score'] ?? $grade['exam_score']) + 
                       ($data['assignment_score'] ?? $grade['assignment_score']) + 
                       ($data['class_work_score'] ?? $grade['class_work_score']);
-        
+
         $gradeInfo = $this->calculateGrade($totalScore);
-        $updateFields[] = 'total_score = ?';
-        $updateFields[] = 'grade_letter = ?';
-        $updateFields[] = 'grade_point = ?';
-        $types .= 'dsd';
-        $values[] = $totalScore;
-        $values[] = $gradeInfo['letter'];
-        $values[] = $gradeInfo['point'];
+        $extra = [
+            ['column' => 'total_score', 'type' => 'd', 'value' => $totalScore],
+            ['column' => 'grade_letter', 'type' => 's', 'value' => $gradeInfo['letter']],
+            ['column' => 'grade_point', 'type' => 'd', 'value' => $gradeInfo['point']],
+        ];
 
-        if (empty($updateFields)) {
-            return ['success' => false, 'message' => 'No fields to update'];
-        }
-
-        $types .= 'i';
-        $values[] = $gradeId;
-
-        $query = "UPDATE {$this->table} SET " . implode(', ', $updateFields) . " WHERE grade_id = ?";
-        $stmt = $this->db->prepare($query);
-
-        if (!$stmt) {
-            return ['success' => false, 'message' => 'Query failed'];
-        }
-
-        $stmt->bind_param($types, ...$values);
-
-        if ($stmt->execute()) {
-            return ['success' => true, 'message' => 'Grade updated successfully'];
-        } else {
-            return ['success' => false, 'message' => $stmt->error];
-        }
+        return $this->updateRecord(
+            $gradeId,
+            $data,
+            $allowedFields,
+            $fieldTypes,
+            $extra,
+            'Grade updated successfully'
+        );
     }
 
     /**
      * Delete grade record
      */
     public function delete($gradeId) {
-        $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE grade_id = ?");
-        $stmt->bind_param('i', $gradeId);
-
-        return $stmt->execute() ? 
-            ['success' => true, 'message' => 'Grade deleted successfully'] : 
-            ['success' => false, 'message' => $stmt->error];
+        return $this->deleteRecord($gradeId, 'Grade deleted successfully');
     }
 
     /**

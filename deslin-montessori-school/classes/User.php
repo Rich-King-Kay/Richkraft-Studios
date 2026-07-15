@@ -4,16 +4,12 @@
  * Handles user authentication, profile, and role management
  */
 
-require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/BaseModel.php';
 require_once __DIR__ . '/../config/SecurityHelper.php';
 
-class User {
-    private $db;
-    private $table = 'users';
-
-    public function __construct() {
-        $this->db = Database::getInstance()->getConnection();
-    }
+class User extends BaseModel {
+    protected $table = 'users';
+    protected $primaryKey = 'user_id';
 
     /**
      * Create a new user
@@ -41,11 +37,7 @@ class User {
             $role
         );
 
-        if ($stmt->execute()) {
-            return ['success' => true, 'user_id' => $this->db->insert_id, 'message' => 'User created successfully'];
-        } else {
-            return ['success' => false, 'message' => $stmt->error];
-        }
+        return $this->insertResult($stmt, 'user_id', 'User created successfully');
     }
 
     /**
@@ -142,53 +134,20 @@ class User {
      * Update user
      */
     public function update($userId, $data) {
-        $fields = [];
-        $types = '';
-        $values = [];
-
-        if (isset($data['email'])) {
-            $fields[] = 'email = ?';
-            $types .= 's';
-            $values[] = $data['email'];
-        }
-        if (isset($data['full_name'])) {
-            $fields[] = 'full_name = ?';
-            $types .= 's';
-            $values[] = $data['full_name'];
-        }
-        if (isset($data['role'])) {
-            $fields[] = 'role = ?';
-            $types .= 's';
-            $values[] = $data['role'];
-        }
         if (isset($data['password'])) {
-            $fields[] = 'password_hash = ?';
-            $types .= 's';
-            $passwordHash = SecurityHelper::hashPassword($data['password']);
-            $values[] = $passwordHash;
+            $data['password_hash'] = SecurityHelper::hashPassword($data['password']);
         }
 
-        if (empty($fields)) {
-            return ['success' => false, 'message' => 'No fields to update'];
-        }
+        $allowedFields = ['email', 'full_name', 'role', 'password_hash'];
 
-        $types .= 'i';
-        $values[] = $userId;
-
-        $query = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE user_id = ?";
-        $stmt = $this->db->prepare($query);
-
-        if (!$stmt) {
-            return ['success' => false, 'message' => 'Query failed'];
-        }
-
-        $stmt->bind_param($types, ...$values);
-
-        if ($stmt->execute()) {
-            return ['success' => true, 'message' => 'User updated successfully'];
-        } else {
-            return ['success' => false, 'message' => $stmt->error];
-        }
+        return $this->updateRecord(
+            $userId,
+            $data,
+            $allowedFields,
+            [],
+            [],
+            'User updated successfully'
+        );
     }
 
     /**
@@ -198,9 +157,7 @@ class User {
         $stmt = $this->db->prepare("UPDATE {$this->table} SET is_active = 0 WHERE user_id = ?");
         $stmt->bind_param('i', $userId);
 
-        return $stmt->execute() ? 
-            ['success' => true, 'message' => 'User deactivated'] : 
-            ['success' => false, 'message' => $stmt->error];
+        return $this->resultFromExecute($stmt, 'User deactivated');
     }
 
     /**
@@ -218,27 +175,14 @@ class User {
      * Check if username exists
      */
     public function usernameExists($username) {
-        $stmt = $this->db->prepare("SELECT user_id FROM {$this->table} WHERE username = ?");
-        $stmt->bind_param('s', $username);
-        $stmt->execute();
-        return $stmt->get_result()->num_rows > 0;
+        return $this->existsWhere('username', $username);
     }
 
     /**
      * Check if email exists
      */
     public function emailExists($email, $excludeUserId = null) {
-        $query = "SELECT user_id FROM {$this->table} WHERE email = ?";
-        if ($excludeUserId) {
-            $query .= " AND user_id != ?";
-            $stmt = $this->db->prepare($query);
-            $stmt->bind_param('si', $email, $excludeUserId);
-        } else {
-            $stmt = $this->db->prepare($query);
-            $stmt->bind_param('s', $email);
-        }
-        $stmt->execute();
-        return $stmt->get_result()->num_rows > 0;
+        return $this->existsWhere('email', $email, $excludeUserId);
     }
 }
 
