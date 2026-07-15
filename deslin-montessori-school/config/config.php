@@ -5,11 +5,14 @@
  */
 
 // Database Configuration
-define('DB_HOST', 'localhost');
-define('DB_USER', 'root');
-define('DB_PASS', ''); // Change to your database password
-define('DB_NAME', 'deslin_montessori_school');
-define('DB_PORT', 3306);
+// Credentials are read from environment variables when available so that
+// secrets are never committed to source control. Fall back to local dev
+// defaults otherwise.
+define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+define('DB_USER', getenv('DB_USER') ?: 'root');
+define('DB_PASS', getenv('DB_PASS') ?: '');
+define('DB_NAME', getenv('DB_NAME') ?: 'deslin_montessori_school');
+define('DB_PORT', (int)(getenv('DB_PORT') ?: 3306));
 
 // Application Configuration
 define('APP_NAME', 'Deslin Montessori School Management System');
@@ -45,11 +48,12 @@ define('ALLOWED_LOGO_TYPES', ['image/jpeg', 'image/png', 'image/svg+xml']);
 define('RECORDS_PER_PAGE', 20);
 
 // Email Configuration (Optional)
-define('MAIL_HOST', 'smtp.gmail.com');
-define('MAIL_PORT', 587);
-define('MAIL_USERNAME', 'your-email@gmail.com');
-define('MAIL_PASSWORD', 'your-app-password');
-define('MAIL_FROM_ADDRESS', 'noreply@deslinmontessori.edu');
+// Credentials are read from environment variables to avoid committing secrets.
+define('MAIL_HOST', getenv('MAIL_HOST') ?: 'smtp.gmail.com');
+define('MAIL_PORT', (int)(getenv('MAIL_PORT') ?: 587));
+define('MAIL_USERNAME', getenv('MAIL_USERNAME') ?: '');
+define('MAIL_PASSWORD', getenv('MAIL_PASSWORD') ?: '');
+define('MAIL_FROM_ADDRESS', getenv('MAIL_FROM_ADDRESS') ?: 'noreply@deslinmontessori.edu');
 define('MAIL_FROM_NAME', 'Deslin Montessori School');
 
 // Color Scheme (from school logo)
@@ -87,8 +91,24 @@ if (APP_ENV === 'development') {
 // Set default timezone
 date_default_timezone_set(DEFAULT_TIMEZONE);
 
-// Enable sessions
+// Enable sessions with hardened cookie settings
 if (session_status() === PHP_SESSION_NONE) {
+    $cookieSecure = (
+        (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
+        (($_SERVER['SERVER_PORT'] ?? null) == 443)
+    );
+
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'secure' => $cookieSecure,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+
+    // Only accept server-generated session IDs
+    ini_set('session.use_strict_mode', '1');
+
     session_start();
 }
 

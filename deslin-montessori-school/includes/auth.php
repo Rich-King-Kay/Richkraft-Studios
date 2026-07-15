@@ -15,8 +15,9 @@ if (!SecurityHelper::isLoggedIn()) {
 }
 
 // Check session timeout
-$sessionTimeout = time() - $_SESSION['login_time'];
-if ($sessionTimeout > SESSION_TIMEOUT) {
+$lastActivity = $_SESSION['login_time'] ?? 0;
+if (($lastActivity === 0) || ((time() - $lastActivity) > SESSION_TIMEOUT)) {
+    $_SESSION = [];
     session_destroy();
     SecurityHelper::redirect(APP_URL . '/public/login.php?expired=1');
     exit();

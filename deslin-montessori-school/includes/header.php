@@ -76,8 +76,8 @@ $userRole = getRoleDisplayName($_SESSION['user_role'] ?? 'staff');
                     <!-- User Menu -->
                     <div class="navbar-item">
                         <button class="user-menu-btn" id="userMenuBtn">
-                            <div class="user-avatar"><?php echo substr($userName, 0, 1); ?></div>
-                            <span class="user-name"><?php echo $userName; ?></span>
+                            <div class="user-avatar"><?php echo htmlspecialchars(substr($userName, 0, 1), ENT_QUOTES, 'UTF-8'); ?></div>
+                            <span class="user-name"><?php echo htmlspecialchars($userName, ENT_QUOTES, 'UTF-8'); ?></span>
                             <i class="fas fa-chevron-down"></i>
                         </button>
                         <div class="user-dropdown" id="userDropdown">

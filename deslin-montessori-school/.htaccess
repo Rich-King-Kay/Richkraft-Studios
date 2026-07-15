@@ -1,24 +1,34 @@
+# Protect sensitive files from direct access
+<FilesMatch "\.(env|sql|log|md|json|ini|lock|sh)$">
+    Require all denied
+</FilesMatch>
+
+# Disable directory listing
+Options -Indexes
+
+# Upload size limits
+<IfModule mod_php.c>
+    php_value upload_max_filesize 5M
+    php_value post_max_size 5M
+</IfModule>
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteBase /Richkraft-Studios/deslin-montessori-school/
-    
-    # Protect sensitive files
-    <FilesMatch "\.(env|sql|log|md|json)$">
-        Deny from all
-    </FilesMatch>
-    
+
+    # Force HTTPS
+    RewriteCond %{HTTPS} off
+    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
     # Remove .php extension
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME}.php -f
     RewriteRule ^([^/]+)/?$ $1.php [QSA]
-    
-    # Redirect to login if not authenticated
-    RewriteCond %{REQUEST_URI} !^/Richkraft-Studios/deslin-montessori-school/public/login\.php$ [NC]
-    RewriteCond %{REQUEST_URI} !^/Richkraft-Studios/deslin-montessori-school/public/assets/ [NC]
-    RewriteCond %{HTTPS} off
-    RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
-else
-    php_value upload_max_filesize 5M
-    php_value post_max_size 5M
-else
+</IfModule>
+
+# Security headers
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
