@@ -16,10 +16,23 @@ class User {
     }
 
     /**
+     * Prepare a statement, logging (rather than silently ignoring) failures.
+     * Returns false when preparation fails so callers can bail out safely
+     * instead of fatally calling methods on a boolean.
+     */
+    private function prepareStmt($query) {
+        $stmt = $this->db->prepare($query);
+        if ($stmt === false) {
+            Database::logError('User::prepare', $this->db->error . ' -- Query: ' . $query);
+        }
+        return $stmt;
+    }
+
+    /**
      * Create a new user
      */
     public function create($data) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "INSERT INTO {$this->table} 
             (username, email, password_hash, full_name, role, is_active) 
             VALUES (?, ?, ?, ?, ?, 1)"
@@ -29,7 +42,7 @@ class User {
             return ['success' => false, 'message' => 'Query preparation failed'];
         }
 
-        $passwordHash = SecurityHelper::hashPassword($data['password']);
+        $passwordHash = SecurityHelper::hashPassword($data['password'] ?? '');
         $role = $data['role'] ?? 'staff';
 
         $stmt->bind_param(
@@ -44,6 +57,7 @@ class User {
         if ($stmt->execute()) {
             return ['success' => true, 'user_id' => $this->db->insert_id, 'message' => 'User created successfully'];
         } else {
+            Database::logError('User::create', $stmt->error);
             return ['success' => false, 'message' => $stmt->error];
         }
     }
@@ -52,7 +66,7 @@ class User {
      * Authenticate user
      */
     public function authenticate($username, $password) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT user_id, username, email, password_hash, full_name, role, is_active 
              FROM {$this->table} WHERE username = ? AND is_active = 1"
         );
@@ -64,6 +78,11 @@ class User {
         $stmt->bind_param('s', $username);
         $stmt->execute();
         $result = $stmt->get_result();
+
+        if ($result === false) {
+            Database::logError('User::authenticate', $this->db->error);
+            return ['success' => false, 'message' => 'Authentication failed'];
+        }
 
         if ($result->num_rows === 0) {
             return ['success' => false, 'message' => 'Invalid username'];
@@ -93,16 +112,20 @@ class User {
      * Get user by ID
      */
     public function getById($userId) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT user_id, username, email, full_name, role, is_active, last_login, created_at 
              FROM {$this->table} WHERE user_id = ?"
         );
+
+        if (!$stmt) {
+            return null;
+        }
 
         $stmt->bind_param('i', $userId);
         $stmt->execute();
         $result = $stmt->get_result();
 
-        return $result->fetch_assoc();
+        return $result === false ? null : $result->fetch_assoc();
     }
 
     /**
@@ -114,28 +137,40 @@ class User {
         
         if ($limit) {
             $query .= " LIMIT ? OFFSET ?";
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->prepareStmt($query);
+            if (!$stmt) {
+                return [];
+            }
             $stmt->bind_param('ii', $limit, $offset);
         } else {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->prepareStmt($query);
+            if (!$stmt) {
+                return [];
+            }
         }
 
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 
     /**
      * Get users by role
      */
     public function getByRole($role) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT user_id, username, email, full_name, role, is_active 
              FROM {$this->table} WHERE role = ? AND is_active = 1 ORDER BY full_name"
         );
 
+        if (!$stmt) {
+            return [];
+        }
+
         $stmt->bind_param('s', $role);
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 
     /**
@@ -176,7 +211,7 @@ class User {
         $values[] = $userId;
 
         $query = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE user_id = ?";
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->prepareStmt($query);
 
         if (!$stmt) {
             return ['success' => false, 'message' => 'Query failed'];
@@ -187,6 +222,7 @@ class User {
         if ($stmt->execute()) {
             return ['success' => true, 'message' => 'User updated successfully'];
         } else {
+            Database::logError('User::update', $stmt->error);
             return ['success' => false, 'message' => $stmt->error];
         }
     }
@@ -195,33 +231,47 @@ class User {
      * Deactivate user
      */
     public function deactivate($userId) {
-        $stmt = $this->db->prepare("UPDATE {$this->table} SET is_active = 0 WHERE user_id = ?");
+        $stmt = $this->prepareStmt("UPDATE {$this->table} SET is_active = 0 WHERE user_id = ?");
+        if (!$stmt) {
+            return ['success' => false, 'message' => 'Query preparation failed'];
+        }
         $stmt->bind_param('i', $userId);
 
-        return $stmt->execute() ? 
-            ['success' => true, 'message' => 'User deactivated'] : 
-            ['success' => false, 'message' => $stmt->error];
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'User deactivated'];
+        }
+        Database::logError('User::deactivate', $stmt->error);
+        return ['success' => false, 'message' => $stmt->error];
     }
 
     /**
      * Update last login
      */
     private function updateLastLogin($userId) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "UPDATE {$this->table} SET last_login = NOW() WHERE user_id = ?"
         );
+        if (!$stmt) {
+            return;
+        }
         $stmt->bind_param('i', $userId);
-        $stmt->execute();
+        if (!$stmt->execute()) {
+            Database::logError('User::updateLastLogin', $stmt->error);
+        }
     }
 
     /**
      * Check if username exists
      */
     public function usernameExists($username) {
-        $stmt = $this->db->prepare("SELECT user_id FROM {$this->table} WHERE username = ?");
+        $stmt = $this->prepareStmt("SELECT user_id FROM {$this->table} WHERE username = ?");
+        if (!$stmt) {
+            return false;
+        }
         $stmt->bind_param('s', $username);
         $stmt->execute();
-        return $stmt->get_result()->num_rows > 0;
+        $result = $stmt->get_result();
+        return $result !== false && $result->num_rows > 0;
     }
 
     /**
@@ -231,14 +281,21 @@ class User {
         $query = "SELECT user_id FROM {$this->table} WHERE email = ?";
         if ($excludeUserId) {
             $query .= " AND user_id != ?";
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->prepareStmt($query);
+            if (!$stmt) {
+                return false;
+            }
             $stmt->bind_param('si', $email, $excludeUserId);
         } else {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->prepareStmt($query);
+            if (!$stmt) {
+                return false;
+            }
             $stmt->bind_param('s', $email);
         }
         $stmt->execute();
-        return $stmt->get_result()->num_rows > 0;
+        $result = $stmt->get_result();
+        return $result !== false && $result->num_rows > 0;
     }
 }
 

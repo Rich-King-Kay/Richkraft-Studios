@@ -15,10 +15,23 @@ class Student {
     }
 
     /**
+     * Prepare a statement, logging (rather than silently ignoring) failures.
+     * Returns false when preparation fails so callers can bail out safely
+     * instead of fatally calling methods on a boolean.
+     */
+    private function prepareStmt($query) {
+        $stmt = $this->db->prepare($query);
+        if ($stmt === false) {
+            Database::logError('Student::prepare', $this->db->error . ' -- Query: ' . $query);
+        }
+        return $stmt;
+    }
+
+    /**
      * Create a new student
      */
     public function create($data) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "INSERT INTO {$this->table} 
             (student_reg_no, first_name, middle_name, last_name, gender, date_of_birth, 
              residential_address, city, state, postal_code, parent_guardian_name, 
@@ -28,6 +41,10 @@ class Student {
              student_status, enrollment_status, passport_photo_path) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
+
+        if (!$stmt) {
+            return ['success' => false, 'message' => 'Query preparation failed'];
+        }
 
         $stmt->bind_param(
             'ssssssssssssssisssssssss',
@@ -61,6 +78,7 @@ class Student {
         if ($stmt->execute()) {
             return ['success' => true, 'student_id' => $this->db->insert_id, 'message' => 'Student added successfully'];
         } else {
+            Database::logError('Student::create', $stmt->error);
             return ['success' => false, 'message' => $stmt->error];
         }
     }
@@ -69,15 +87,20 @@ class Student {
      * Get student by ID
      */
     public function getById($studentId) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT s.*, c.class_name FROM {$this->table} s 
              LEFT JOIN classes c ON s.current_class_id = c.class_id 
              WHERE s.student_id = ?"
         );
 
+        if (!$stmt) {
+            return null;
+        }
+
         $stmt->bind_param('i', $studentId);
         $stmt->execute();
-        return $stmt->get_result()->fetch_assoc();
+        $result = $stmt->get_result();
+        return $result === false ? null : $result->fetch_assoc();
     }
 
     /**
@@ -105,6 +128,10 @@ class Student {
         }
 
         $result = $this->db->query($query);
+        if ($result === false) {
+            Database::logError('Student::getAll', $this->db->error . ' -- Query: ' . $query);
+            return [];
+        }
         return $result->fetch_all(MYSQLI_ASSOC);
     }
 
@@ -112,15 +139,20 @@ class Student {
      * Get students by class
      */
     public function getByClass($classId) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT s.* FROM {$this->table} s 
              WHERE s.current_class_id = ? AND s.student_status = 'Active' 
              ORDER BY s.first_name, s.last_name"
         );
 
+        if (!$stmt) {
+            return [];
+        }
+
         $stmt->bind_param('i', $classId);
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 
     /**
@@ -134,10 +166,14 @@ class Student {
                      OR s.student_reg_no LIKE ? OR s.parent_guardian_name LIKE ? 
                   LIMIT ?";
 
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->prepareStmt($query);
+        if (!$stmt) {
+            return [];
+        }
         $stmt->bind_param('ssssi', $searchTerm, $searchTerm, $searchTerm, $searchTerm, $limit);
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 
     /**
@@ -185,6 +221,7 @@ class Student {
         if ($stmt->execute()) {
             return ['success' => true, 'message' => 'Student updated successfully'];
         } else {
+            Database::logError('Student::update', $stmt->error);
             return ['success' => false, 'message' => $stmt->error];
         }
     }
@@ -193,12 +230,17 @@ class Student {
      * Delete student
      */
     public function delete($studentId) {
-        $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE student_id = ?");
+        $stmt = $this->prepareStmt("DELETE FROM {$this->table} WHERE student_id = ?");
+        if (!$stmt) {
+            return ['success' => false, 'message' => 'Query preparation failed'];
+        }
         $stmt->bind_param('i', $studentId);
 
-        return $stmt->execute() ? 
-            ['success' => true, 'message' => 'Student deleted successfully'] : 
-            ['success' => false, 'message' => $stmt->error];
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'Student deleted successfully'];
+        }
+        Database::logError('Student::delete', $stmt->error);
+        return ['success' => false, 'message' => $stmt->error];
     }
 
     /**
@@ -212,24 +254,33 @@ class Student {
         }
 
         $result = $this->db->query($query);
+        if ($result === false) {
+            Database::logError('Student::getTotalCount', $this->db->error . ' -- Query: ' . $query);
+            return 0;
+        }
         $row = $result->fetch_assoc();
-        return $row['total'];
+        return $row['total'] ?? 0;
     }
 
     /**
      * Get students by academic year
      */
     public function getByAcademicYear($academicYear) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT s.*, c.class_name FROM {$this->table} s 
              LEFT JOIN classes c ON s.current_class_id = c.class_id 
              WHERE s.academic_year = ? 
              ORDER BY s.first_name, s.last_name"
         );
 
+        if (!$stmt) {
+            return [];
+        }
+
         $stmt->bind_param('s', $academicYear);
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 
     /**
@@ -239,14 +290,21 @@ class Student {
         $query = "SELECT student_id FROM {$this->table} WHERE student_reg_no = ?";
         if ($excludeStudentId) {
             $query .= " AND student_id != ?";
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->prepareStmt($query);
+            if (!$stmt) {
+                return false;
+            }
             $stmt->bind_param('si', $regNo, $excludeStudentId);
         } else {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->prepareStmt($query);
+            if (!$stmt) {
+                return false;
+            }
             $stmt->bind_param('s', $regNo);
         }
         $stmt->execute();
-        return $stmt->get_result()->num_rows > 0;
+        $result = $stmt->get_result();
+        return $result !== false && $result->num_rows > 0;
     }
 }
 

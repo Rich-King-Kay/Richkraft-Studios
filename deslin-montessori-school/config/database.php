@@ -28,12 +28,25 @@ class Database {
             $this->connection->set_charset('utf8mb4');
 
         } catch (Exception $e) {
+            // Always log the real cause so it is never silently swallowed,
+            // even when the details are hidden from the end user in production.
+            self::logError('Database connection', $e->getMessage());
+
             if (APP_ENV === 'development') {
                 die('Error: ' . $e->getMessage());
             } else {
                 die('A database error occurred. Please contact the administrator.');
             }
         }
+    }
+
+    /**
+     * Log a database-related error to the PHP error log.
+     * Centralised so failures are recorded consistently instead of
+     * being discarded at the call site.
+     */
+    public static function logError($context, $message) {
+        error_log('[DMSMS] ' . $context . ': ' . $message);
     }
 
     /**
@@ -57,7 +70,11 @@ class Database {
      * Prepare a statement
      */
     public function prepare($query) {
-        return $this->connection->prepare($query);
+        $stmt = $this->connection->prepare($query);
+        if ($stmt === false) {
+            self::logError('prepare', $this->connection->error . ' -- Query: ' . $query);
+        }
+        return $stmt;
     }
 
     /**
@@ -72,6 +89,10 @@ class Database {
      */
     public function getResults($stmt) {
         $result = $stmt->get_result();
+        if ($result === false) {
+            self::logError('getResults', $this->connection->error);
+            return [];
+        }
         return $result->fetch_all(MYSQLI_ASSOC);
     }
 
@@ -80,6 +101,10 @@ class Database {
      */
     public function getRow($stmt) {
         $result = $stmt->get_result();
+        if ($result === false) {
+            self::logError('getRow', $this->connection->error);
+            return null;
+        }
         return $result->fetch_assoc();
     }
 

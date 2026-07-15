@@ -15,16 +15,33 @@ class Grade {
     }
 
     /**
+     * Prepare a statement, logging (rather than silently ignoring) failures.
+     * Returns false when preparation fails so callers can bail out safely
+     * instead of fatally calling methods on a boolean.
+     */
+    private function prepareStmt($query) {
+        $stmt = $this->db->prepare($query);
+        if ($stmt === false) {
+            Database::logError('Grade::prepare', $this->db->error . ' -- Query: ' . $query);
+        }
+        return $stmt;
+    }
+
+    /**
      * Create a grade record
      */
     public function create($data) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "INSERT INTO {$this->table} 
             (student_id, subject_id, class_id, term_id, academic_year, test_score, 
              exam_score, assignment_score, class_work_score, total_score, 
              grade_letter, grade_point, remarks, teacher_id) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
+
+        if (!$stmt) {
+            return ['success' => false, 'message' => 'Query preparation failed'];
+        }
 
         // Calculate total score
         $totalScore = ($data['test_score'] ?? 0) + ($data['exam_score'] ?? 0) + 
@@ -56,6 +73,7 @@ class Grade {
         if ($stmt->execute()) {
             return ['success' => true, 'grade_id' => $this->db->insert_id, 'message' => 'Grade recorded successfully'];
         } else {
+            Database::logError('Grade::create', $stmt->error);
             return ['success' => false, 'message' => $stmt->error];
         }
     }
@@ -64,7 +82,7 @@ class Grade {
      * Get grade by ID
      */
     public function getById($gradeId) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT g.*, sub.subject_name, s.first_name, s.last_name, t.term_name 
              FROM {$this->table} g 
              LEFT JOIN subjects sub ON g.subject_id = sub.subject_id 
@@ -73,16 +91,21 @@ class Grade {
              WHERE g.grade_id = ?"
         );
 
+        if (!$stmt) {
+            return null;
+        }
+
         $stmt->bind_param('i', $gradeId);
         $stmt->execute();
-        return $stmt->get_result()->fetch_assoc();
+        $result = $stmt->get_result();
+        return $result === false ? null : $result->fetch_assoc();
     }
 
     /**
      * Get grades for a student in a term
      */
     public function getStudentTermGrades($studentId, $termId) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT g.*, sub.subject_name, sub.subject_code 
              FROM {$this->table} g 
              LEFT JOIN subjects sub ON g.subject_id = sub.subject_id 
@@ -90,9 +113,14 @@ class Grade {
              ORDER BY sub.subject_name"
         );
 
+        if (!$stmt) {
+            return [];
+        }
+
         $stmt->bind_param('ii', $studentId, $termId);
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 
     /**
@@ -107,15 +135,22 @@ class Grade {
 
         if ($subjectId) {
             $query .= " AND g.subject_id = ?";
-            $stmt = $this->db->prepare($query . " ORDER BY s.first_name, s.last_name");
+            $stmt = $this->prepareStmt($query . " ORDER BY s.first_name, s.last_name");
+            if (!$stmt) {
+                return [];
+            }
             $stmt->bind_param('iii', $classId, $termId, $subjectId);
         } else {
-            $stmt = $this->db->prepare($query . " ORDER BY s.first_name, s.last_name, sub.subject_name");
+            $stmt = $this->prepareStmt($query . " ORDER BY s.first_name, s.last_name, sub.subject_name");
+            if (!$stmt) {
+                return [];
+            }
             $stmt->bind_param('ii', $classId, $termId);
         }
 
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 
     /**
@@ -154,6 +189,9 @@ class Grade {
 
         // Recalculate total score and grade
         $grade = $this->getById($gradeId);
+        if ($grade === null) {
+            return ['success' => false, 'message' => 'Grade record not found'];
+        }
         $totalScore = ($data['test_score'] ?? $grade['test_score']) + 
                       ($data['exam_score'] ?? $grade['exam_score']) + 
                       ($data['assignment_score'] ?? $grade['assignment_score']) + 
@@ -187,6 +225,7 @@ class Grade {
         if ($stmt->execute()) {
             return ['success' => true, 'message' => 'Grade updated successfully'];
         } else {
+            Database::logError('Grade::update', $stmt->error);
             return ['success' => false, 'message' => $stmt->error];
         }
     }
@@ -195,12 +234,17 @@ class Grade {
      * Delete grade record
      */
     public function delete($gradeId) {
-        $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE grade_id = ?");
+        $stmt = $this->prepareStmt("DELETE FROM {$this->table} WHERE grade_id = ?");
+        if (!$stmt) {
+            return ['success' => false, 'message' => 'Query preparation failed'];
+        }
         $stmt->bind_param('i', $gradeId);
 
-        return $stmt->execute() ? 
-            ['success' => true, 'message' => 'Grade deleted successfully'] : 
-            ['success' => false, 'message' => $stmt->error];
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'Grade deleted successfully'];
+        }
+        Database::logError('Grade::delete', $stmt->error);
+        return ['success' => false, 'message' => $stmt->error];
     }
 
     /**
@@ -224,15 +268,20 @@ class Grade {
      * Get student average score for a term
      */
     public function getStudentTermAverage($studentId, $termId) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT AVG(total_score) as average, COUNT(grade_id) as subject_count 
              FROM {$this->table} 
              WHERE student_id = ? AND term_id = ?"
         );
 
+        if (!$stmt) {
+            return null;
+        }
+
         $stmt->bind_param('ii', $studentId, $termId);
         $stmt->execute();
-        return $stmt->get_result()->fetch_assoc();
+        $result = $stmt->get_result();
+        return $result === false ? null : $result->fetch_assoc();
     }
 
     /**
@@ -255,10 +304,14 @@ class Grade {
                   GROUP BY s.student_id
                   ORDER BY average_score DESC";
 
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->prepareStmt($query);
+        if (!$stmt) {
+            return [];
+        }
         $stmt->bind_param('iii', $termId, $classId, $classId);
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 }
 

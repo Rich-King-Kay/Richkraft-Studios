@@ -195,8 +195,9 @@ class SecurityHelper {
         $fileName = uniqid() . '_' . basename($file['name']);
         $filePath = $destination . $fileName;
 
-        if (!is_dir($destination)) {
-            mkdir($destination, 0755, true);
+        if (!is_dir($destination) && !mkdir($destination, 0755, true) && !is_dir($destination)) {
+            error_log('[DMSMS] saveUploadedFile: failed to create directory ' . $destination);
+            return ['success' => false, 'message' => 'Failed to create upload directory'];
         }
 
         if (move_uploaded_file($file['tmp_name'], $filePath)) {

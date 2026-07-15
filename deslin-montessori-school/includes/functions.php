@@ -21,51 +21,84 @@ function formatDateTime($datetime) {
 }
 
 /**
+ * Run a read-only query and return the mysqli result.
+ * Logs and returns false on failure instead of letting a failed
+ * query (which returns false) trigger a fatal "member function on bool" error.
+ */
+function runReadQuery($sql, $context) {
+    $db = Database::getInstance()->getConnection();
+    $result = $db->query($sql);
+    if ($result === false) {
+        Database::logError($context, $db->error . ' -- Query: ' . $sql);
+        return false;
+    }
+    return $result;
+}
+
+/**
  * Get total students count
  */
 function getTotalStudents() {
-    $db = Database::getInstance()->getConnection();
-    $result = $db->query("SELECT COUNT(*) as total FROM students WHERE student_status = 'Active'");
+    $result = runReadQuery(
+        "SELECT COUNT(*) as total FROM students WHERE student_status = 'Active'",
+        'getTotalStudents'
+    );
+    if ($result === false) {
+        return 0;
+    }
     $row = $result->fetch_assoc();
-    return $row['total'];
+    return $row['total'] ?? 0;
 }
 
 /**
  * Get total teachers count
  */
 function getTotalTeachers() {
-    $db = Database::getInstance()->getConnection();
-    $result = $db->query("SELECT COUNT(*) as total FROM teachers WHERE teacher_status = 'Active'");
+    $result = runReadQuery(
+        "SELECT COUNT(*) as total FROM teachers WHERE teacher_status = 'Active'",
+        'getTotalTeachers'
+    );
+    if ($result === false) {
+        return 0;
+    }
     $row = $result->fetch_assoc();
-    return $row['total'];
+    return $row['total'] ?? 0;
 }
 
 /**
  * Get total classes count
  */
 function getTotalClasses() {
-    $db = Database::getInstance()->getConnection();
-    $result = $db->query("SELECT COUNT(*) as total FROM classes WHERE is_active = 1");
+    $result = runReadQuery(
+        "SELECT COUNT(*) as total FROM classes WHERE is_active = 1",
+        'getTotalClasses'
+    );
+    if ($result === false) {
+        return 0;
+    }
     $row = $result->fetch_assoc();
-    return $row['total'];
+    return $row['total'] ?? 0;
 }
 
 /**
  * Get attendance percentage for today
  */
 function getTodayAttendancePercentage() {
-    $db = Database::getInstance()->getConnection();
     $today = date('Y-m-d');
-    $result = $db->query(
+    $result = runReadQuery(
         "SELECT 
             COUNT(*) as total_marked,
             SUM(CASE WHEN status = 'Present' THEN 1 ELSE 0 END) as present
          FROM attendance 
-         WHERE attendance_date = '$today'"
+         WHERE attendance_date = '$today'",
+        'getTodayAttendancePercentage'
     );
+    if ($result === false) {
+        return 0;
+    }
     $row = $result->fetch_assoc();
-    
-    if ($row['total_marked'] == 0) return 0;
+
+    if (empty($row['total_marked'])) return 0;
     return round(($row['present'] / $row['total_marked']) * 100, 2);
 }
 
@@ -73,8 +106,13 @@ function getTodayAttendancePercentage() {
  * Get all classes
  */
 function getAllClasses() {
-    $db = Database::getInstance()->getConnection();
-    $result = $db->query("SELECT * FROM classes WHERE is_active = 1 ORDER BY class_level");
+    $result = runReadQuery(
+        "SELECT * FROM classes WHERE is_active = 1 ORDER BY class_level",
+        'getAllClasses'
+    );
+    if ($result === false) {
+        return [];
+    }
     return $result->fetch_all(MYSQLI_ASSOC);
 }
 
@@ -82,8 +120,13 @@ function getAllClasses() {
  * Get all subjects
  */
 function getAllSubjects() {
-    $db = Database::getInstance()->getConnection();
-    $result = $db->query("SELECT * FROM subjects WHERE is_active = 1 ORDER BY subject_name");
+    $result = runReadQuery(
+        "SELECT * FROM subjects WHERE is_active = 1 ORDER BY subject_name",
+        'getAllSubjects'
+    );
+    if ($result === false) {
+        return [];
+    }
     return $result->fetch_all(MYSQLI_ASSOC);
 }
 
@@ -91,8 +134,10 @@ function getAllSubjects() {
  * Get school settings
  */
 function getSchoolSettings() {
-    $db = Database::getInstance()->getConnection();
-    $result = $db->query("SELECT * FROM school_settings LIMIT 1");
+    $result = runReadQuery("SELECT * FROM school_settings LIMIT 1", 'getSchoolSettings');
+    if ($result === false) {
+        return null;
+    }
     return $result->fetch_assoc();
 }
 

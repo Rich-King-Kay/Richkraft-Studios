@@ -38,7 +38,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['login_time'] = time();
             $_SESSION['csrf_token'] = SecurityHelper::generateCSRFToken();
 
-            // Log session
+            // Log session and audit trail. Failures here must never block a
+            // successful login, but they should be recorded rather than swallowed.
             $db = Database::getInstance()->getConnection();
             $sessionToken = SecurityHelper::generateSessionToken();
             $ip = SecurityHelper::getClientIP();
@@ -48,16 +49,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "INSERT INTO session_log (user_id, ip_address, user_agent, session_token, is_active) 
                  VALUES (?, ?, ?, ?, 1)"
             );
-            $stmt->bind_param('isss', $loginResult['user_id'], $ip, $userAgent, $sessionToken);
-            $stmt->execute();
+            if ($stmt) {
+                $stmt->bind_param('isss', $loginResult['user_id'], $ip, $userAgent, $sessionToken);
+                if (!$stmt->execute()) {
+                    Database::logError('login session_log', $stmt->error);
+                }
+            } else {
+                Database::logError('login session_log prepare', $db->error);
+            }
 
             // Audit log
             $auditStmt = $db->prepare(
                 "INSERT INTO audit_log (user_id, action, ip_address, user_agent) 
                  VALUES (?, 'LOGIN', ?, ?)"
             );
-            $auditStmt->bind_param('iss', $loginResult['user_id'], $ip, $userAgent);
-            $auditStmt->execute();
+            if ($auditStmt) {
+                $auditStmt->bind_param('iss', $loginResult['user_id'], $ip, $userAgent);
+                if (!$auditStmt->execute()) {
+                    Database::logError('login audit_log', $auditStmt->error);
+                }
+            } else {
+                Database::logError('login audit_log prepare', $db->error);
+            }
 
             SecurityHelper::redirect(APP_URL . '/public/index.php');
             exit();

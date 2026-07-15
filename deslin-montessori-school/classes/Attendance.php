@@ -15,28 +15,49 @@ class Attendance {
     }
 
     /**
+     * Prepare a statement, logging (rather than silently ignoring) failures.
+     * Returns false when preparation fails so callers can bail out safely
+     * instead of fatally calling methods on a boolean.
+     */
+    private function prepareStmt($query) {
+        $stmt = $this->db->prepare($query);
+        if ($stmt === false) {
+            Database::logError('Attendance::prepare', $this->db->error . ' -- Query: ' . $query);
+        }
+        return $stmt;
+    }
+
+    /**
      * Mark attendance for a student
      */
     public function mark($data) {
         // Check if already marked for the day
-        $checkStmt = $this->db->prepare(
+        $checkStmt = $this->prepareStmt(
             "SELECT attendance_id FROM {$this->table} 
              WHERE student_id = ? AND attendance_date = ?"
         );
+        if (!$checkStmt) {
+            return ['success' => false, 'message' => 'Query preparation failed'];
+        }
         $checkStmt->bind_param('is', $data['student_id'], $data['attendance_date']);
         $checkStmt->execute();
 
-        if ($checkStmt->get_result()->num_rows > 0) {
+        $checkResult = $checkStmt->get_result();
+        if ($checkResult !== false && $checkResult->num_rows > 0) {
             // Update existing record
             return $this->updateAttendance($data);
         }
 
         // Insert new record
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "INSERT INTO {$this->table} 
             (student_id, attendance_date, status, marked_by, remarks, academic_year) 
             VALUES (?, ?, ?, ?, ?, ?)"
         );
+
+        if (!$stmt) {
+            return ['success' => false, 'message' => 'Query preparation failed'];
+        }
 
         $stmt->bind_param(
             'isssss',
@@ -51,6 +72,7 @@ class Attendance {
         if ($stmt->execute()) {
             return ['success' => true, 'message' => 'Attendance marked successfully'];
         } else {
+            Database::logError('Attendance::mark', $stmt->error);
             return ['success' => false, 'message' => $stmt->error];
         }
     }
@@ -59,11 +81,15 @@ class Attendance {
      * Update existing attendance record
      */
     private function updateAttendance($data) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "UPDATE {$this->table} 
              SET status = ?, marked_by = ?, remarks = ?, marked_at = NOW() 
              WHERE student_id = ? AND attendance_date = ?"
         );
+
+        if (!$stmt) {
+            return ['success' => false, 'message' => 'Query preparation failed'];
+        }
 
         $stmt->bind_param(
             'sisis',
@@ -74,23 +100,30 @@ class Attendance {
             $data['attendance_date']
         );
 
-        return $stmt->execute() ? 
-            ['success' => true, 'message' => 'Attendance updated successfully'] : 
-            ['success' => false, 'message' => $stmt->error];
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'Attendance updated successfully'];
+        }
+        Database::logError('Attendance::updateAttendance', $stmt->error);
+        return ['success' => false, 'message' => $stmt->error];
     }
 
     /**
      * Get attendance for a student on a specific date
      */
     public function getByStudentAndDate($studentId, $date) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT * FROM {$this->table} 
              WHERE student_id = ? AND attendance_date = ?"
         );
 
+        if (!$stmt) {
+            return null;
+        }
+
         $stmt->bind_param('is', $studentId, $date);
         $stmt->execute();
-        return $stmt->get_result()->fetch_assoc();
+        $result = $stmt->get_result();
+        return $result === false ? null : $result->fetch_assoc();
     }
 
     /**
@@ -103,10 +136,14 @@ class Attendance {
                   WHERE s.current_class_id = ? AND a.attendance_date = ? 
                   ORDER BY s.first_name, s.last_name";
 
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->prepareStmt($query);
+        if (!$stmt) {
+            return [];
+        }
         $stmt->bind_param('is', $classId, $date);
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 
     /**
@@ -124,15 +161,22 @@ class Attendance {
 
         if ($academicYear) {
             $query .= " AND academic_year = ?";
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->prepareStmt($query);
+            if (!$stmt) {
+                return null;
+            }
             $stmt->bind_param('is', $studentId, $academicYear);
         } else {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->prepareStmt($query);
+            if (!$stmt) {
+                return null;
+            }
             $stmt->bind_param('i', $studentId);
         }
 
         $stmt->execute();
-        return $stmt->get_result()->fetch_assoc();
+        $result = $stmt->get_result();
+        return $result === false ? null : $result->fetch_assoc();
     }
 
     /**
@@ -162,30 +206,42 @@ class Attendance {
                   ORDER BY s.first_name, s.last_name";
 
         if ($academicYear) {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->prepareStmt($query);
+            if (!$stmt) {
+                return [];
+            }
             $stmt->bind_param('sssi', $startDate, $endDate, $academicYear, $classId);
         } else {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->prepareStmt($query);
+            if (!$stmt) {
+                return [];
+            }
             $stmt->bind_param('ssi', $startDate, $endDate, $classId);
         }
 
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 
     /**
      * Get attendance records for a date range
      */
     public function getByDateRange($studentId, $startDate, $endDate) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT * FROM {$this->table} 
              WHERE student_id = ? AND attendance_date BETWEEN ? AND ? 
              ORDER BY attendance_date DESC"
         );
 
+        if (!$stmt) {
+            return [];
+        }
+
         $stmt->bind_param('iss', $studentId, $startDate, $endDate);
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 
     /**
@@ -194,7 +250,7 @@ class Attendance {
     public function getAttendancePercentage($studentId, $academicYear = null) {
         $summary = $this->getStudentSummary($studentId, $academicYear);
         
-        if ($summary['total_days'] == 0) {
+        if (empty($summary['total_days'])) {
             return 0;
         }
 
@@ -205,12 +261,17 @@ class Attendance {
      * Delete attendance record
      */
     public function delete($attendanceId) {
-        $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE attendance_id = ?");
+        $stmt = $this->prepareStmt("DELETE FROM {$this->table} WHERE attendance_id = ?");
+        if (!$stmt) {
+            return ['success' => false, 'message' => 'Query preparation failed'];
+        }
         $stmt->bind_param('i', $attendanceId);
 
-        return $stmt->execute() ? 
-            ['success' => true, 'message' => 'Attendance record deleted'] : 
-            ['success' => false, 'message' => $stmt->error];
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'Attendance record deleted'];
+        }
+        Database::logError('Attendance::delete', $stmt->error);
+        return ['success' => false, 'message' => $stmt->error];
     }
 }
 
