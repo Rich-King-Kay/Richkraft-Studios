@@ -4,15 +4,11 @@
  * Handles student data operations
  */
 
-require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/BaseModel.php';
 
-class Student {
-    private $db;
-    private $table = 'students';
-
-    public function __construct() {
-        $this->db = Database::getInstance()->getConnection();
-    }
+class Student extends BaseModel {
+    protected $table = 'students';
+    protected $primaryKey = 'student_id';
 
     /**
      * Create a new student
@@ -58,11 +54,7 @@ class Student {
             $data['passport_photo_path']
         );
 
-        if ($stmt->execute()) {
-            return ['success' => true, 'student_id' => $this->db->insert_id, 'message' => 'Student added successfully'];
-        } else {
-            return ['success' => false, 'message' => $stmt->error];
-        }
+        return $this->insertResult($stmt, 'student_id', 'Student added successfully');
     }
 
     /**
@@ -144,10 +136,6 @@ class Student {
      * Update student
      */
     public function update($studentId, $data) {
-        $updateFields = [];
-        $types = '';
-        $values = [];
-
         $allowedFields = [
             'first_name', 'middle_name', 'last_name', 'gender', 'date_of_birth',
             'residential_address', 'city', 'state', 'postal_code',
@@ -158,62 +146,32 @@ class Student {
             'passport_photo_path'
         ];
 
-        foreach ($allowedFields as $field) {
-            if (isset($data[$field])) {
-                $updateFields[] = "$field = ?";
-                $types .= (in_array($field, ['current_class_id']) ? 'i' : 's');
-                $values[] = $data[$field];
-            }
-        }
-
-        if (empty($updateFields)) {
-            return ['success' => false, 'message' => 'No fields to update'];
-        }
-
-        $types .= 'i';
-        $values[] = $studentId;
-
-        $query = "UPDATE {$this->table} SET " . implode(', ', $updateFields) . " WHERE student_id = ?";
-        $stmt = $this->db->prepare($query);
-
-        if (!$stmt) {
-            return ['success' => false, 'message' => 'Query failed'];
-        }
-
-        $stmt->bind_param($types, ...$values);
-
-        if ($stmt->execute()) {
-            return ['success' => true, 'message' => 'Student updated successfully'];
-        } else {
-            return ['success' => false, 'message' => $stmt->error];
-        }
+        return $this->updateRecord(
+            $studentId,
+            $data,
+            $allowedFields,
+            ['current_class_id' => 'i'],
+            [],
+            'Student updated successfully'
+        );
     }
 
     /**
      * Delete student
      */
     public function delete($studentId) {
-        $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE student_id = ?");
-        $stmt->bind_param('i', $studentId);
-
-        return $stmt->execute() ? 
-            ['success' => true, 'message' => 'Student deleted successfully'] : 
-            ['success' => false, 'message' => $stmt->error];
+        return $this->deleteRecord($studentId, 'Student deleted successfully');
     }
 
     /**
      * Get total students count
      */
     public function getTotalCount($filters = []) {
-        $query = "SELECT COUNT(*) as total FROM {$this->table} WHERE 1";
-
+        $where = '1';
         if (isset($filters['status'])) {
-            $query .= " AND student_status = '" . $this->db->real_escape_string($filters['status']) . "'";
+            $where .= " AND student_status = '" . $this->db->real_escape_string($filters['status']) . "'";
         }
-
-        $result = $this->db->query($query);
-        $row = $result->fetch_assoc();
-        return $row['total'];
+        return $this->countRecords($where);
     }
 
     /**
@@ -236,17 +194,7 @@ class Student {
      * Check if registration number exists
      */
     public function regNoExists($regNo, $excludeStudentId = null) {
-        $query = "SELECT student_id FROM {$this->table} WHERE student_reg_no = ?";
-        if ($excludeStudentId) {
-            $query .= " AND student_id != ?";
-            $stmt = $this->db->prepare($query);
-            $stmt->bind_param('si', $regNo, $excludeStudentId);
-        } else {
-            $stmt = $this->db->prepare($query);
-            $stmt->bind_param('s', $regNo);
-        }
-        $stmt->execute();
-        return $stmt->get_result()->num_rows > 0;
+        return $this->existsWhere('student_reg_no', $regNo, $excludeStudentId);
     }
 }
 

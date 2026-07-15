@@ -151,6 +151,20 @@ class SecurityHelper {
     }
 
     /**
+     * Record an action in the audit log with the client's IP and user agent
+     */
+    public static function logAudit($db, $userId, $action) {
+        $stmt = $db->prepare(
+            "INSERT INTO audit_log (user_id, action, ip_address, user_agent) 
+             VALUES (?, ?, ?, ?)"
+        );
+        $ip = self::getClientIP();
+        $userAgent = self::getUserAgent();
+        $stmt->bind_param('isss', $userId, $action, $ip, $userAgent);
+        $stmt->execute();
+    }
+
+    /**
      * Log out user
      */
     public static function logout() {

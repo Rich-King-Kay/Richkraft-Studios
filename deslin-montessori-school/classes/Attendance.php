@@ -4,15 +4,11 @@
  * Handles attendance data operations
  */
 
-require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/BaseModel.php';
 
-class Attendance {
-    private $db;
-    private $table = 'attendance';
-
-    public function __construct() {
-        $this->db = Database::getInstance()->getConnection();
-    }
+class Attendance extends BaseModel {
+    protected $table = 'attendance';
+    protected $primaryKey = 'attendance_id';
 
     /**
      * Mark attendance for a student
@@ -48,11 +44,7 @@ class Attendance {
             $data['academic_year']
         );
 
-        if ($stmt->execute()) {
-            return ['success' => true, 'message' => 'Attendance marked successfully'];
-        } else {
-            return ['success' => false, 'message' => $stmt->error];
-        }
+        return $this->resultFromExecute($stmt, 'Attendance marked successfully');
     }
 
     /**
@@ -74,9 +66,7 @@ class Attendance {
             $data['attendance_date']
         );
 
-        return $stmt->execute() ? 
-            ['success' => true, 'message' => 'Attendance updated successfully'] : 
-            ['success' => false, 'message' => $stmt->error];
+        return $this->resultFromExecute($stmt, 'Attendance updated successfully');
     }
 
     /**
@@ -205,12 +195,7 @@ class Attendance {
      * Delete attendance record
      */
     public function delete($attendanceId) {
-        $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE attendance_id = ?");
-        $stmt->bind_param('i', $attendanceId);
-
-        return $stmt->execute() ? 
-            ['success' => true, 'message' => 'Attendance record deleted'] : 
-            ['success' => false, 'message' => $stmt->error];
+        return $this->deleteRecord($attendanceId, 'Attendance record deleted');
     }
 }
 

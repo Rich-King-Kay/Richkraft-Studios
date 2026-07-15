@@ -11,8 +11,6 @@ require_once '../config/database.php';
 if (isset($_SESSION['user_id'])) {
     $db = Database::getInstance()->getConnection();
     $userId = $_SESSION['user_id'];
-    $ip = SecurityHelper::getClientIP();
-    $userAgent = SecurityHelper::getUserAgent();
 
     // Update session log
     $stmt = $db->prepare(
@@ -23,12 +21,7 @@ if (isset($_SESSION['user_id'])) {
     $stmt->execute();
 
     // Audit log
-    $auditStmt = $db->prepare(
-        "INSERT INTO audit_log (user_id, action, ip_address, user_agent) 
-         VALUES (?, 'LOGOUT', ?, ?)"
-    );
-    $auditStmt->bind_param('iss', $userId, $ip, $userAgent);
-    $auditStmt->execute();
+    SecurityHelper::logAudit($db, $userId, 'LOGOUT');
 }
 
 // Destroy session
