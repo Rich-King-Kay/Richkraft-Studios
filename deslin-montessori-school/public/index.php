@@ -24,7 +24,7 @@ include_once '../includes/sidebar.php';
             <!-- Dashboard Content -->
             <div class="content-wrapper">
                 <div class="page-header">
-                    <h1>Welcome, <?php echo $_SESSION['user_name']; ?>!</h1>
+                    <h1>Welcome, <?php echo htmlspecialchars($_SESSION['user_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>!</h1>
                     <p>Dashboard Overview - <?php echo getCurrentAcademicYear(); ?></p>
                 </div>
 
