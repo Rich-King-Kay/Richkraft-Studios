@@ -14,7 +14,14 @@ if (!SecurityHelper::isLoggedIn()) {
     exit();
 }
 
-// Check session timeout
+// Check session timeout. Treat a missing login timestamp as an expired
+// session instead of computing against a null value.
+if (!isset($_SESSION['login_time'])) {
+    session_destroy();
+    SecurityHelper::redirect(APP_URL . '/public/login.php?expired=1');
+    exit();
+}
+
 $sessionTimeout = time() - $_SESSION['login_time'];
 if ($sessionTimeout > SESSION_TIMEOUT) {
     session_destroy();

@@ -15,16 +15,33 @@ class Teacher {
     }
 
     /**
+     * Prepare a statement, logging (rather than silently ignoring) failures.
+     * Returns false when preparation fails so callers can bail out safely
+     * instead of fatally calling methods on a boolean.
+     */
+    private function prepareStmt($query) {
+        $stmt = $this->db->prepare($query);
+        if ($stmt === false) {
+            Database::logError('Teacher::prepare', $this->db->error . ' -- Query: ' . $query);
+        }
+        return $stmt;
+    }
+
+    /**
      * Create a new teacher
      */
     public function create($data, $userId) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "INSERT INTO {$this->table} 
             (user_id, teacher_emp_no, phone_number, residential_address, city, state, 
              postal_code, date_employed, assigned_class_id, qualification, specialization, 
              employment_status, date_of_birth, bank_account_number, bank_name, teacher_status) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active')"
         );
+
+        if (!$stmt) {
+            return ['success' => false, 'message' => 'Query preparation failed'];
+        }
 
         $stmt->bind_param(
             'issssssisssssss',
@@ -48,6 +65,7 @@ class Teacher {
         if ($stmt->execute()) {
             return ['success' => true, 'teacher_id' => $this->db->insert_id, 'message' => 'Teacher added successfully'];
         } else {
+            Database::logError('Teacher::create', $stmt->error);
             return ['success' => false, 'message' => $stmt->error];
         }
     }
@@ -56,7 +74,7 @@ class Teacher {
      * Get teacher by ID
      */
     public function getById($teacherId) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT t.*, u.username, u.email, u.full_name, c.class_name 
              FROM {$this->table} t 
              LEFT JOIN users u ON t.user_id = u.user_id 
@@ -64,9 +82,14 @@ class Teacher {
              WHERE t.teacher_id = ?"
         );
 
+        if (!$stmt) {
+            return null;
+        }
+
         $stmt->bind_param('i', $teacherId);
         $stmt->execute();
-        return $stmt->get_result()->fetch_assoc();
+        $result = $stmt->get_result();
+        return $result === false ? null : $result->fetch_assoc();
     }
 
     /**
@@ -85,6 +108,10 @@ class Teacher {
         }
 
         $result = $this->db->query($query);
+        if ($result === false) {
+            Database::logError('Teacher::getAll', $this->db->error . ' -- Query: ' . $query);
+            return [];
+        }
         return $result->fetch_all(MYSQLI_ASSOC);
     }
 
@@ -92,7 +119,7 @@ class Teacher {
      * Get teacher by user ID
      */
     public function getByUserId($userId) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT t.*, u.username, u.email, u.full_name, c.class_name 
              FROM {$this->table} t 
              LEFT JOIN users u ON t.user_id = u.user_id 
@@ -100,25 +127,35 @@ class Teacher {
              WHERE t.user_id = ?"
         );
 
+        if (!$stmt) {
+            return null;
+        }
+
         $stmt->bind_param('i', $userId);
         $stmt->execute();
-        return $stmt->get_result()->fetch_assoc();
+        $result = $stmt->get_result();
+        return $result === false ? null : $result->fetch_assoc();
     }
 
     /**
      * Get teachers by class
      */
     public function getByClass($classId) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "SELECT t.*, u.username, u.email, u.full_name 
              FROM {$this->table} t 
              LEFT JOIN users u ON t.user_id = u.user_id 
              WHERE t.assigned_class_id = ? AND t.teacher_status = 'Active'"
         );
 
+        if (!$stmt) {
+            return [];
+        }
+
         $stmt->bind_param('i', $classId);
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 
     /**
@@ -134,10 +171,14 @@ class Teacher {
                      OR u.email LIKE ? OR t.phone_number LIKE ? 
                   LIMIT ?";
 
-        $stmt = $this->db->prepare($query);
+        $stmt = $this->prepareStmt($query);
+        if (!$stmt) {
+            return [];
+        }
         $stmt->bind_param('ssssi', $searchTerm, $searchTerm, $searchTerm, $searchTerm, $limit);
         $stmt->execute();
-        return $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $result = $stmt->get_result();
+        return $result === false ? [] : $result->fetch_all(MYSQLI_ASSOC);
     }
 
     /**
@@ -182,6 +223,7 @@ class Teacher {
         if ($stmt->execute()) {
             return ['success' => true, 'message' => 'Teacher updated successfully'];
         } else {
+            Database::logError('Teacher::update', $stmt->error);
             return ['success' => false, 'message' => $stmt->error];
         }
     }
@@ -190,23 +232,33 @@ class Teacher {
      * Delete teacher
      */
     public function delete($teacherId) {
-        $stmt = $this->db->prepare(
+        $stmt = $this->prepareStmt(
             "UPDATE {$this->table} SET teacher_status = 'Inactive' WHERE teacher_id = ?"
         );
+        if (!$stmt) {
+            return ['success' => false, 'message' => 'Query preparation failed'];
+        }
         $stmt->bind_param('i', $teacherId);
 
-        return $stmt->execute() ? 
-            ['success' => true, 'message' => 'Teacher deleted successfully'] : 
-            ['success' => false, 'message' => $stmt->error];
+        if ($stmt->execute()) {
+            return ['success' => true, 'message' => 'Teacher deleted successfully'];
+        }
+        Database::logError('Teacher::delete', $stmt->error);
+        return ['success' => false, 'message' => $stmt->error];
     }
 
     /**
      * Get total teachers count
      */
     public function getTotalCount() {
-        $result = $this->db->query("SELECT COUNT(*) as total FROM {$this->table} WHERE teacher_status = 'Active'");
+        $query = "SELECT COUNT(*) as total FROM {$this->table} WHERE teacher_status = 'Active'";
+        $result = $this->db->query($query);
+        if ($result === false) {
+            Database::logError('Teacher::getTotalCount', $this->db->error . ' -- Query: ' . $query);
+            return 0;
+        }
         $row = $result->fetch_assoc();
-        return $row['total'];
+        return $row['total'] ?? 0;
     }
 
     /**
@@ -216,14 +268,21 @@ class Teacher {
         $query = "SELECT teacher_id FROM {$this->table} WHERE teacher_emp_no = ?";
         if ($excludeTeacherId) {
             $query .= " AND teacher_id != ?";
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->prepareStmt($query);
+            if (!$stmt) {
+                return false;
+            }
             $stmt->bind_param('si', $empNo, $excludeTeacherId);
         } else {
-            $stmt = $this->db->prepare($query);
+            $stmt = $this->prepareStmt($query);
+            if (!$stmt) {
+                return false;
+            }
             $stmt->bind_param('s', $empNo);
         }
         $stmt->execute();
-        return $stmt->get_result()->num_rows > 0;
+        $result = $stmt->get_result();
+        return $result !== false && $result->num_rows > 0;
     }
 }
 
