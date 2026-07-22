@@ -306,7 +306,7 @@ p { color: var(--text); }
   position: absolute; inset: 0;
   background:
     linear-gradient(115deg, rgba(6, 9, 14, 0.92) 30%, rgba(6, 9, 14, 0.55) 100%),
-    url("https://images.unsplash.com/photo-1581093458791-9d09c9c5c6a4?auto=format&fit=crop&w=1920&q=80") center/cover no-repeat;
+    url("https://images.unsplash.com/photo-1587293852726-70cdb56c2866?auto=format&fit=crop&w=1920&q=80") center/cover no-repeat;
   z-index: -1;
 }
 .hero-content { max-width: 720px; padding: 60px 0; }
